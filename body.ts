@@ -1,207 +1,229 @@
-import {binaryArrayToBytes, extendBytes, isArrayBufferView} from "./util.ts";
-import BodyInit = domTypes.BodyInit;
+import {
+  binaryArrayToBytes,
+  isArrayBufferView,
+  readFullStream
+} from "./util.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
+import { Multipart } from "./multipart.ts";
+import { ReadableStreamDefaultReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
+import { defer } from "https://denopkg.com/keroxp/deno-streams/defer.ts";
 
-type MultipartFormData = {
-    file: Uint8Array,
-    name: string,
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+export type BodyInit =
+  | Blob
+  | domTypes.BufferSource
+  | FormData
+  | URLSearchParams
+  | ReadableStream<Uint8Array>
+  | string;
+
+export interface BodyMixin {
+  readonly body: ReadableStream | null;
+  readonly bodyUsed: boolean;
+
+  arrayBuffer(): Promise<ArrayBuffer>;
+
+  blob(): Promise<domTypes.Blob>;
+
+  formData(): Promise<FormData>;
+
+  json(): Promise<any>;
+
+  text(): Promise<string>;
 }
-const encoder = new TextEncoder;
-const decoder = new TextDecoder;
 
-export class Body implements domTypes.Body {
-    protected _bodyInit: BodyInit;
-    public get bodyInit(): BodyInit {
-        return this._bodyInit;
+export class Body implements BodyMixin {
+  private _bodyInit: BodyInit;
+  public get bodyInit(): BodyInit {
+    return this._bodyInit;
+  }
+
+  private _headers: Headers;
+  public get headers(): Headers {
+    return this._headers;
+  }
+
+  constructor(
+    public readonly stream: ReadableStream<Uint8Array>,
+    public readonly contentType: string
+  ) {}
+
+  get body(): ReadableStream {
+    return this.stream;
+  }
+
+  get bodyUsed(): boolean {
+    return this.body !== null && this.body.disturbed;
+  }
+
+  get bodyLocked(): boolean {
+    return this.body !== null && this.body.locked;
+  }
+
+  private async readFullBody(): Promise<Uint8Array> {
+    if (this.bodyUsed || this.bodyLocked) {
+      throw new TypeError("body is locked or disturbed");
+    }
+    const stream = this.body || new ReadableStream<Uint8Array>({});
+    return readFullStream(stream);
+  }
+
+  private bodyArrayBuffer: ArrayBuffer;
+
+  async arrayBuffer(): Promise<ArrayBuffer> {
+    if (this.bodyArrayBuffer) return this.bodyArrayBuffer;
+    const bytes = await this.readFullBody();
+    return bytes.buffer as ArrayBuffer;
+  }
+
+  private bodyBlob: Blob;
+
+  async blob(): Promise<domTypes.Blob> {
+    if (this.bodyBlob) return this.bodyBlob;
+    return (this.bodyBlob = new Blob([await this.arrayBuffer()], {
+      type: this.contentType
+    }));
+  }
+
+  private bodyFormData: FormData;
+
+  async formData(): Promise<domTypes.FormData> {
+    if (this.bodyFormData) return this.bodyFormData;
+    if (!this.contentType) throw new RangeError("body is not form data");
+    if (this.contentType.match(/^application\/x-www-form-urlencoded/)) {
+      // form
+      const text = await this.text();
+      const form = new FormData();
+      text
+        .trim()
+        .split("&")
+        .map(kv => kv.split("="))
+        .map(kv => form.set(kv[0], kv[1]));
+      return (this.bodyFormData = form);
+    } else if (this.contentType.match(/^multipart\/form-data/)) {
+      throw new Error("multipart formdata is not implemented");
+    }
+    throw new Error("body is not formData");
+  }
+
+  private bodyString: string;
+
+  async json(): Promise<any> {
+    this.bodyString = await this.text();
+    return JSON.parse(this.bodyString);
+  }
+
+  async text(): Promise<string> {
+    if (this.bodyString) return this.bodyString;
+    return (this.bodyString = decoder.decode(await this.arrayBuffer()));
+  }
+}
+
+export function extractBody(
+  body: BodyInit
+): {
+  stream: ReadableStream<Uint8Array>;
+  contentType: string;
+  size: number | null;
+} {
+  let contentType = null;
+  let size = null;
+  let stream = new ReadableStream<Uint8Array>({});
+  if (body instanceof ReadableStream) {
+    if (!(body.locked || body.disturbed)) {
+      throw new Error("body stream is locked or disturbed");
+    }
+    stream = body;
+  } else if (typeof body === "string") {
+    contentType = "text/plain;charset=UTF-8";
+    const bytes = encoder.encode(body);
+    const controller = stream.readableStreamController;
+    controller.enqueue(bytes);
+    controller.close();
+    size = bytes.byteLength;
+  } else if (body instanceof ArrayBuffer) {
+    const view = new Uint8Array(body);
+    const controller = stream.readableStreamController;
+    controller.enqueue(view);
+    controller.close();
+    size = view.byteLength;
+  } else if (body instanceof Blob) {
+    if (body.type && body.type !== "") {
+      contentType = body.type;
+    }
+    stream = new ReadableStream({
+      start: async controller => {
+        return readBlob(body)
+          .then(controller.enqueue)
+          .then(controller.close)
+          .catch(controller.error);
+      }
+    });
+    size = body.size;
+  } else if (body instanceof FormData) {
+    const startDefer = defer<void>();
+    stream = new ReadableStream({
+      start: async _ => startDefer
+    });
+    const controller = stream.readableStreamController;
+    const writer = {
+      write: async p => {
+        controller.enqueue(p);
+        return p.byteLength;
+      }
     };
-
-    protected bodyString?: string;
-    protected bodyArrayBuffer?: ArrayBuffer;
-    protected bodyBlob?: Blob;
-    protected bodyFormData?: domTypes.FormData;
-    protected bodySearchParams?: URLSearchParams;
-
-    constructor(body: BodyInit = "") {
-        this._bodyInit = body;
-        if (typeof body === "string") {
-            this.bodyString = body;
-        } else if (body instanceof ArrayBuffer) {
-            this.bodyArrayBuffer = body;
-        } else if (isArrayBufferView(body)) {
-            this.bodyArrayBuffer = body.buffer;
-        } else if (body.constructor.name === "ReadableStream") {
-            this.body = body as domTypes.ReadableStream;
-        } else if (body instanceof Blob) {
-            this.bodyBlob = body;
-        } else if (body instanceof FormData) {
-            this.bodyFormData = body;
-        } else if (body instanceof URLSearchParams) {
-            this.bodySearchParams = body;
-        } else {
-            throw new Error("invalid input: " + body)
+    const multipart = new Multipart(writer);
+    (async function a() {
+      for (const [key, val] of body.entries()) {
+        if (typeof val === "string") {
+          await multipart.writeField(key, val);
+        } else if (val) {
+          const fw = multipart.createFormFile(key, val.name);
+          await readBlob(val).then(fw.write);
         }
+      }
+      await multipart.close();
+      await multipart.flush();
+    })()
+      .then(startDefer.resolve)
+      .catch(startDefer.reject);
+    contentType = multipart.formDataContentType();
+  } else if (body instanceof URLSearchParams) {
+    let res = "";
+    const controller = stream.readableStreamController;
+    for (const [key, val] of body.entries()) {
+      res += `${key}=${val}&`;
     }
-
-    protected _headers: Headers;
-    get headers(): Headers {
-        return this._headers;
-    }
-
-    protected initBody(bodyInit: BodyInit, headers: Headers) {
-        if (!headers.has("content-type")) {
-            const type = estimateBodyType(bodyInit);
-            if (type) {
-                headers.set("content-type", type);
-            }
-        }
-    }
-
-    body: domTypes.ReadableStream | null;
-    protected _bodyUsed = false;
-    get bodyUsed(): boolean {
-        return this._bodyUsed
-    };
-
-    async arrayBuffer(): Promise<ArrayBuffer> {
-        return this.bodyArrayBuffer || await unmarshalBodyInit(this._bodyInit);
-    }
-
-    async blob(): Promise<domTypes.Blob> {
-        if (this.bodyBlob) return this.bodyBlob;
-        return this.bodyBlob = new Blob([await unmarshalBodyInit(this._bodyInit)], {
-            type: estimateBodyType(this._bodyInit)
-        });
-    }
-
-    async formData(): Promise<domTypes.FormData> {
-        if (this.bodyFormData) return this.bodyFormData;
-        const contentType = this.headers.get("content-type") || "";
-        if (contentType.match(/^application\/x-www-form-urlencoded/)) {
-            // form
-            const text = await this.text();
-            const form = new FormData();
-            text.trim()
-                .split("&")
-                .map(kv => kv.split("="))
-                .map(kv => form.set(kv[0], kv[1]));
-            return this.bodyFormData = form;
-        } else if (contentType.match(/^multipart\/form-data/)) {
-            throw new Error("multipart formdata is not implemented")
-        }
-        throw new Error("body is not formData");
-    }
-
-    async json(): Promise<any> {
-        this.bodyString = await this.text();
-        return JSON.parse(this.bodyString);
-    }
-
-    async text(): Promise<string> {
-        return this.bodyString || decoder.decode(await unmarshalBodyInit(this._bodyInit))
-    }
-
-}
-
-export function estimateBodyType(body: BodyInit) {
-    if (typeof body === "string") {
-        return "text/plain;charset=UTF-8"
-    } else if (body instanceof Blob && body.type) {
-        return body.type;
-    } else if (body instanceof FormData) {
-        //return "application/x-www-form-urlencoded;charset=UTF-8"
-    }
-}
-
-export async function unmarshalBodyInit(body: BodyInit): Promise<Uint8Array> {
-    if (body === void 0 || body === null) {
-        return new Uint8Array;
-    }
-    let bytes: Uint8Array;
-    if (typeof body === "string") {
-        bytes = new TextEncoder().encode(body)
-    } else if (body instanceof ArrayBuffer || isArrayBufferView(body)) {
-        bytes = binaryArrayToBytes(body)
-    } else if (body.constructor.name === "ReadableStream") {
-        const stream = body as domTypes.ReadableStream;
-        const streamReader = stream.getReader();
-        let buf = new Uint8Array(1024);
-        let offs = 0;
-        while (true) {
-            const result = await streamReader.read();
-            if (result.done) break;
-            const value = result.value as ArrayLike<number>;
-            if (offs + value.length > buf.length) {
-                buf = extendBytes(buf, 1024)
-            }
-            buf.set(value, offs);
-            offs += value.length;
-        }
-        bytes = buf.slice(0, offs);
-    } else if (body instanceof Blob) {
-        bytes = await readBlob(body);
-    } else if (body instanceof FormData) {
-        const boundary = "--aaa";
-        const components: MultipartFormData[] = [];
-        const promises = [];
-        for (const [key, val] of body.entries()) {
-            if (typeof val === "string") {
-                const file = encoder.encode(val);
-                components.push({
-                    file,
-                    name: key,
-                })
-            } else {
-                promises.push(readBlob(val).then(file => ({
-                    file,
-                    name: key
-                })))
-            }
-        }
-        const files = await Promise.all(promises);
-        components.push(...files);
-        const contentLength = components.reduce((sum, v) => sum + calcFormDataByteLength(v, boundary), 0) + 4;
-        bytes = new Uint8Array(contentLength);
-        let offs = 0;
-        for (const data of components) {
-            const head = [boundary, `content-disposition: name=\"${data.name}\"`, "",].join("\r\n")
-            const headBytes = encoder.encode(head);
-            bytes.set(headBytes, offs);
-            bytes.set(data.file);
-            offs += headBytes.byteLength + data.file.byteLength
-        }
-    } else if (body instanceof URLSearchParams) {
-        let str = "";
-        for (const [key, val] of body.entries()) {
-            str += `${key}=${val}`
-        }
-        bytes = encoder.encode(str)
-    } else {
-        throw new Error("invalid input: " + body)
-    }
-    return bytes;
-}
-
-const kContentDispositionTemplate = "content-disposition: name=\"\"";
-
-function calcFormDataByteLength(data: MultipartFormData, boundary: string): number {
-    let len = 0;
-    len += boundary.length;
-    len += kContentDispositionTemplate.length + data.name.length;
-    len += data.file.byteLength;
-    len += "\r\n".length * 4;
-    return len;
+    const bytes = encoder.encode(res);
+    controller.enqueue(bytes);
+    controller.close();
+    contentType = "application/x-www-form-urlencoded";
+    size = bytes.byteLength;
+  } else if (isArrayBufferView(body)) {
+    const bytes = binaryArrayToBytes(body);
+    const controller = stream.readableStreamController;
+    controller.enqueue(bytes);
+    controller.close();
+    size = bytes.byteLength;
+  } else {
+    throw new Error("invalid input: " + body);
+  }
+  return { stream, contentType, size };
 }
 
 async function readBlob(blob: domTypes.Blob): Promise<Uint8Array> {
-    const fileReader = null;//new FileReader();
-    await new Promise(resolve => {
-        fileReader.addEventListener("loadend", resolve);
-        fileReader.readAsArrayBuffer(blob);
-    });
-    const {result} = fileReader;
-    if (typeof result === "string") {
-        return new TextEncoder().encode(result)
-    } else if (result instanceof ArrayBuffer) {
-        return new Uint8Array(result)
-    }
-    return null;
+  const fileReader = null; //new FileReader();
+  await new Promise(resolve => {
+    fileReader.addEventListener("loadend", resolve);
+    fileReader.readAsArrayBuffer(blob);
+  });
+  const { result } = fileReader;
+  if (typeof result === "string") {
+    return new TextEncoder().encode(result);
+  } else if (result instanceof ArrayBuffer) {
+    return new Uint8Array(result);
+  }
+  return null;
 }
