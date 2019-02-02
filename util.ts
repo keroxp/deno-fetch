@@ -1,6 +1,13 @@
-import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import { ReadableStreamDefaultReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
-import { read, write } from "deno";
+import {
+  ReadableStream,
+  ReadableStreamReadResult
+} from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
+import { ReadableStreamReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
+import { Reader, ReadResult } from "deno";
+import {
+  IsReadableStreamBYOBReader,
+  ReadableStreamBYOBReader
+} from "https://denopkg.com/keroxp/deno-streams/readable_stream_byob_reader.ts";
 
 // HTTP methods whose capitalization should be normalized
 const methods = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];
@@ -101,10 +108,10 @@ export function binaryArrayToBytes(
 export async function readFullStream(
   stream: ReadableStream
 ): Promise<Uint8Array> {
-  const reader = stream.getReader() as ReadableStreamDefaultReader;
+  const reader = stream.getReader() as ReadableStreamReader<Uint8Array>;
   let chunks: Uint8Array[] = [];
   let len = 0;
-  while (reader.ownerReadableStream.state === "readable") {
+  while (true) {
     const { value, done } = await reader.read();
     if (value) {
       chunks.push(value);
@@ -121,4 +128,37 @@ export async function readFullStream(
     loc += chunk.byteLength;
   });
   return ret;
+}
+
+export class ReadableStreamDenoReader implements Reader {
+  reader: ReadableStreamReader<Uint8Array>;
+  byobReader: ReadableStreamBYOBReader;
+
+  constructor(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader();
+    if (IsReadableStreamBYOBReader(reader)) {
+      this.byobReader = reader;
+    } else {
+      this.reader = reader;
+    }
+  }
+
+  private async _read(p: Uint8Array) {
+    if (this.reader) {
+      return await this.reader.read();
+    } else {
+      const { done } = await this.byobReader.read(p);
+      return { value: p, done };
+    }
+  }
+
+  async read(p: Uint8Array): Promise<ReadResult> {
+    const { value, done } = await this._read(p);
+    let nread = 0;
+    if (value) {
+      p.set(value);
+      nread = value.byteLength;
+    }
+    return { nread, eof: done };
+  }
 }
