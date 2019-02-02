@@ -1,10 +1,39 @@
-import { Request, RequestInit } from "./request.ts";
-import { dial, Reader } from "deno";
-import { ReadableStreamDenoReader, unmarshalHeaders } from "./util.ts";
-import { Response } from "./response.ts";
-import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import { writeHttpRequest } from "./writer.ts";
-import { readHttpResponse } from "./reader.ts";
+import {Request, RequestInit} from "./request.ts";
+import {dial, Reader} from "deno";
+import {ReadableStreamDenoReader, unmarshalHeaders} from "./util.ts";
+import {Response} from "./response.ts";
+import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
+import {HttpRequest, writeHttpRequest} from "./writer.ts";
+import {HttpResponse, readHttpResponse} from "./reader.ts";
+
+const kPortMap = {
+  "http:": "80",
+  "https:": "443"
+};
+
+function normalizeRequest(params: string | HttpRequest) {
+  let req: HttpRequest;
+  let url: URL;
+  if (typeof params === "string") {
+    url = new URL(params);
+    req = {
+      url: params,
+      method: "GET",
+    }
+  } else {
+    url = new URL(params.url);
+    req = params;
+  }
+  url.port = url.port || kPortMap[url.protocol];
+  return {url, req}
+}
+
+export async function request(params: string | HttpRequest): Promise<HttpResponse> {
+  const {url, req} = normalizeRequest(params);
+  const conn = await dial("tcp", `${url.hostname}:${url.port}`);
+  await writeHttpRequest(conn, req);
+  return readHttpResponse(conn);
+}
 
 export async function fetch(
   input: Request | string,
@@ -21,31 +50,24 @@ export async function fetch(
   }
 }
 
-const kPortMap = {
-  "http:": "80",
-  "https:": "443"
-};
-
 async function _fetch(req: Request): Promise<Response> {
   const reqHeaders = unmarshalHeaders(req.headers);
   if (req.keepalive) {
     reqHeaders.set("Connection", "Keep-Alive");
   }
   const url = new URL(req.url);
-  let { host, pathname, protocol, port, search } = url;
+  let {hostname, protocol, port} = url;
   if (!port) {
     port = kPortMap[protocol];
   }
-  const conn = await dial("tcp", `${host}:${port}`);
+  const conn = await dial("tcp", `${hostname}:${port}`);
   let body: Reader;
   if (req.body) {
     body = new ReadableStreamDenoReader(req.body);
   }
   await writeHttpRequest(conn, {
     method: req.method,
-    host: host,
-    query: search,
-    path: pathname,
+    url: req.url,
     headers: req.headers,
     body,
     bodySize: req.bodySize
@@ -62,7 +84,7 @@ async function _fetch(req: Request): Promise<Response> {
     new ReadableStream<Uint8Array>({
       pull: async controller => {
         try {
-          const { nread, eof } = await bodyReader.read(resBodyBuffer);
+          const {nread, eof} = await bodyReader.read(resBodyBuffer);
           if (nread > 0) {
             controller.enqueue(resBodyBuffer.slice(0, nread));
           }

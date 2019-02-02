@@ -1,13 +1,9 @@
-import {
-  test,
-  assertEqual,
-  runTests
-} from "https://deno.land/x/testing/mod.ts";
-import { fetch } from "./fetch.ts";
-import { open } from "deno";
-import { WritableStream } from "https://denopkg.com/keroxp/deno-streams/writable_stream.ts";
-import { setFilter } from "https://deno.land/x/testing/testing.ts";
-setFilter("File");
+import {assertEqual, runTests, test} from "https://deno.land/x/testing/mod.ts";
+import {fetch, request} from "./fetch.ts";
+import {copy, open} from "deno";
+import {setFilter} from "https://deno.land/x/testing/testing.ts";
+import {ReadableStreamDenoReader, readString} from "./util.ts";
+
 test(async function testGet() {
   const res = await fetch("http://httpbin.org/get?deno=land", {
     method: "GET"
@@ -31,10 +27,16 @@ test(async function testPost() {
 
 test(async function testGetAndFile() {
   const f = await open("out.json", "w+");
-  const dest = new WritableStream(f);
   const resp = await fetch("http://httpbin.org/get?deno=land");
-  await resp.body.pipeTo(dest);
+  const src = new ReadableStreamDenoReader(resp.body);
+  await copy(f, src).catch(e => f.close());
   assertEqual("closed", resp.body.state);
-  assertEqual("closed", dest.state);
+});
+
+test(async function testRequest() {
+  const {body} = await request("http://httpbin.org/get?deno=land");
+  const str = await readString(body);
+  const json = JSON.parse(str);
+  assertEqual("land", json["args"]["deno"])
 });
 runTests();

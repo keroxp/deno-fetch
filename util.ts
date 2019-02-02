@@ -2,8 +2,8 @@ import {
   ReadableStream,
   ReadableStreamReadResult
 } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import { ReadableStreamReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
-import { Reader, ReadResult } from "deno";
+import {ReadableStreamReader} from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
+import {copy, Reader, ReadResult, Writer} from "deno";
 import {
   IsReadableStreamBYOBReader,
   ReadableStreamBYOBReader
@@ -112,7 +112,7 @@ export async function readFullStream(
   let chunks: Uint8Array[] = [];
   let len = 0;
   while (true) {
-    const { value, done } = await reader.read();
+    const {value, done} = await reader.read();
     if (value) {
       chunks.push(value);
       len += value.byteLength;
@@ -147,18 +147,41 @@ export class ReadableStreamDenoReader implements Reader {
     if (this.reader) {
       return await this.reader.read();
     } else {
-      const { done } = await this.byobReader.read(p);
-      return { value: p, done };
+      const {done} = await this.byobReader.read(p);
+      return {value: p, done};
     }
   }
 
   async read(p: Uint8Array): Promise<ReadResult> {
-    const { value, done } = await this._read(p);
+    const {value, done} = await this._read(p);
     let nread = 0;
     if (value) {
       p.set(value);
       nread = value.byteLength;
     }
-    return { nread, eof: done };
+    return {nread, eof: done};
   }
+}
+
+
+const decoder = new TextDecoder();
+
+export class StringWriter implements Writer {
+  constructor(private buf: string = "") {
+  }
+
+  async write(p: Uint8Array): Promise<number> {
+    this.buf += decoder.decode(p);
+    return p.byteLength;
+  }
+
+  toString(): string {
+    return this.buf
+  }
+}
+
+export async function readString(reader: Reader): Promise<string> {
+  const w = new StringWriter();
+  await copy(w, reader);
+  return w.toString();
 }

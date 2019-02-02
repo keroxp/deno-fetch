@@ -1,35 +1,39 @@
-import { read, Reader, Writer } from "deno";
-import { BufReader, BufWriter } from "http://deno.land/x/net/bufio.ts";
+import {read, Reader, Writer} from "deno";
+import {BufReader, BufWriter} from "http://deno.land/x/net/bufio.ts";
 
 const encoder = new TextEncoder();
 
+export type HttpRequest = {
+  method: string;
+  url: string,
+  headers?: Headers;
+  body?: Reader;
+  bodySize?: number;
+  basicAuth?: {
+    username: string;
+    password: string;
+  };
+}
+
 export async function writeHttpRequest(
   w: Writer,
-  opts: {
-    method: string;
-    host: string;
-    path: string;
-    query?: string;
-    headers: Headers;
-    body?: Reader;
-    bodySize?: number;
-    basicAuth?: {
-      username: string;
-      password: string;
-    };
-  }
+  opts: HttpRequest
 ) {
   const writer = new BufWriter(w);
-  const { method, host, path, query, headers, basicAuth, body } = opts;
-  let { bodySize } = opts;
+  const {method, basicAuth, body} = opts;
+  const url = new URL(opts.url);
+  let {headers, bodySize} = opts;
+  if (!headers) {
+    headers = new Headers()
+  }
   // start line
-  const lines = [`${method} ${path}${query || ""} HTTP/1.1`];
+  const lines = [`${method} ${url.pathname}${url.search || ""} HTTP/1.1`];
   // header
   if (!headers.has("Host")) {
-    headers.set("Host", host);
+    headers.set("Host", url.host);
   }
   if (basicAuth && !headers.has("Authorization")) {
-    const { username, password } = basicAuth;
+    const {username, password} = basicAuth;
     const base64 = btoa(`${username}:${password}`);
     headers.set("Authorization", `Basic ${base64}`);
   }
@@ -56,7 +60,7 @@ export async function writeHttpRequest(
     const reader = new BufReader(body);
     const buf = new Uint8Array(1024);
     while (true) {
-      const { nread, eof } = await reader.read(buf);
+      const {nread, eof} = await reader.read(buf);
       if (nread > 0) {
         const chunk = buf.slice(0, nread);
         if (hasContentLength) {

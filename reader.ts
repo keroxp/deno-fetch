@@ -1,15 +1,17 @@
-import { Reader, ReadResult } from "deno";
-import { BufReader } from "https://deno.land/x/io/bufio.ts";
-import { TextProtoReader } from "https://deno.land/x/textproto/mod.ts";
+import {Reader, ReadResult} from "deno";
+import {BufReader} from "https://deno.land/x/io/bufio.ts";
+import {TextProtoReader} from "https://deno.land/x/textproto/mod.ts";
 
-export async function readHttpResponse(
-  r: Reader
-): Promise<{
+export type HttpResponse = {
   status: number;
   statusText: string;
   headers: Headers;
   body: Reader;
-}> {
+}
+
+export async function readHttpResponse(
+  r: Reader
+): Promise<HttpResponse> {
   const reader = new BufReader(r);
   const tpReader = new TextProtoReader(reader);
   // read status line
@@ -42,9 +44,9 @@ class BodyReader implements Reader {
   }
 
   async read(p: Uint8Array): Promise<ReadResult> {
-    const { nread } = await this.reader.read(p);
+    const {nread} = await this.reader.read(p);
     this.bodyLengthRemaining -= nread;
-    return { nread, eof: this.bodyLengthRemaining === 0 };
+    return {nread, eof: this.bodyLengthRemaining === 0};
   }
 }
 
@@ -52,7 +54,8 @@ class ChunkedBodyReader implements Reader {
   bufReader = new BufReader(this.reader);
   tpReader = new TextProtoReader(this.bufReader);
 
-  constructor(private reader: Reader) {}
+  constructor(private reader: Reader) {
+  }
 
   chunks: Uint8Array[] = [];
   crlfBuf = new Uint8Array(2);
@@ -74,14 +77,14 @@ class ChunkedBodyReader implements Reader {
       if (p.byteOffset + buf.byteLength < p.byteLength) {
         p.set(buf, p.byteOffset);
         this.chunks.shift();
-        return { nread: p.byteLength, eof: false };
+        return {nread: p.byteLength, eof: false};
       } else {
         p.set(buf.slice(buf.byteOffset, p.byteLength), p.byteOffset);
         this.chunks[0] = buf.slice(p.byteOffset, buf.byteLength);
-        return { nread: p.byteLength, eof: false };
+        return {nread: p.byteLength, eof: false};
       }
     } else {
-      return { nread: 0, eof: true };
+      return {nread: 0, eof: true};
     }
   }
 }

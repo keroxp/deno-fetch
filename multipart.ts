@@ -1,5 +1,5 @@
-import { Closer, Reader, ReadResult, Writer } from "deno";
-import { BufState, BufWriter } from "https://deno.land/x/io@v0.2.6/bufio.ts";
+import {Closer, copy, Reader, ReadResult, Writer} from "deno";
+import {BufState, BufWriter} from "https://deno.land/x/io@v0.2.6/bufio.ts";
 
 const encoder = new TextEncoder();
 
@@ -12,7 +12,8 @@ function randomBoundary() {
 }
 
 class PartReader implements Reader {
-  constructor(private part: Part) {}
+  constructor(private part: Part) {
+  }
 
   read(p: Uint8Array): Promise<ReadResult> {
     return undefined;
@@ -21,8 +22,20 @@ class PartReader implements Reader {
 
 class Part implements Writer {
   closed = false;
+  private readonly partHeader: string;
+  private headersWritten: boolean = false;
 
-  constructor(readonly multipartWriter: Writer) {}
+  constructor(readonly multipartWriter: Writer,
+              boundary: string,
+              private headers: Headers) {
+    let buf = "";
+    buf += `\r\n--${boundary}\r\n`;
+    for (const [key, value] of headers.entries()) {
+      buf += `${key}: ${value}\r\n`;
+    }
+    buf += `\r\n`;
+    this.partHeader = buf
+  }
 
   close(): void {
     this.closed = true;
@@ -31,6 +44,10 @@ class Part implements Writer {
   async write(p: Uint8Array): Promise<number> {
     if (this.closed) {
       throw new Error("part is closed");
+    }
+    if (!this.headersWritten) {
+      await this.multipartWriter.write(encoder.encode(this.partHeader));
+      this.headersWritten = true
     }
     return this.multipartWriter.write(p);
   }
@@ -70,12 +87,11 @@ export class Multipart implements Writer, Closer {
     this.bufWriter = new BufWriter(writer);
   }
 
-  queuedChunks: string[] = [];
+  private firstBoundaryWritten = false;
 
   async write(p: Uint8Array): Promise<number> {
-    let chunk: string;
-    while ((chunk = this.queuedChunks.shift())) {
-      await this.bufWriter.write(encoder.encode(chunk));
+    if (!this.firstBoundaryWritten) {
+      await this.bufWriter.write(encoder.encode(`--${this.boundary}`))
     }
     return this.bufWriter.write(p);
   }
@@ -95,18 +111,7 @@ export class Multipart implements Writer, Closer {
     if (this.lastPart) {
       this.lastPart.close();
     }
-    let buf = "";
-    if (this.lastPart) {
-      buf += `\r\n--${this.boundary}\r\n`;
-    } else {
-      buf += `--${this.boundary}`;
-    }
-    for (const [key, value] of headers.entries()) {
-      buf += `${key}: ${value}\r\n`;
-    }
-    buf += `\r\n`;
-    this.queuedChunks.push(buf);
-    const part = new Part(this);
+    const part = new Part(this, this.boundary, headers);
     this.lastPart = part;
     return part;
   }
@@ -131,6 +136,11 @@ export class Multipart implements Writer, Closer {
   async writeField(field: string, value: string) {
     const f = await this.createFormField(field);
     await f.write(encoder.encode(value));
+  }
+
+  async writeFile(field: string, filename: string, file: Reader) {
+    const f = await this.createFormFile(field, filename);
+    await copy(f, file)
   }
 
   async close() {
