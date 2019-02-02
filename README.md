@@ -8,7 +8,7 @@ This is more compatible with [fetch standard](https://fetch.spec.whatwg.org) tha
 
 ```ts
 
-import {fetch} from "https://denopkg.com/keroxp/deno-fetch"
+import {fetch} from "https://denopkg.com/keroxp/deno-fetch/fetch.ts"
 
 // GET
 fetch("http://httpbin.org/get?deno=land")
@@ -26,7 +26,7 @@ fetch("http://httpbin.org/post", new URLSearchParams({
 
 ```ts
 import {open} from "deno"
-import {fetch} from "https://denopkg.com/keroxp/deno-fetch"
+import {fetch} from "https://denopkg.com/keroxp/deno-fetch/fetch.ts"
 import {WritableStream} from "https://denopkg.com/keroxp/deno-streams/writable_stream.ts";
 
 const f = await open("out.json", "w+")
