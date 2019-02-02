@@ -4,7 +4,7 @@ import {
   readFullStream
 } from "./util.ts";
 import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import { Multipart } from "./multipart.ts";
+import { Multipart } from "https://denopkg.com/keroxp/deno-request/multipart.ts";
 import { defer } from "https://denopkg.com/keroxp/deno-streams/defer.ts";
 
 const encoder = new TextEncoder();

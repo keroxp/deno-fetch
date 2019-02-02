@@ -163,25 +163,3 @@ export class ReadableStreamDenoReader implements Reader {
   }
 }
 
-
-const decoder = new TextDecoder();
-
-export class StringWriter implements Writer {
-  constructor(private buf: string = "") {
-  }
-
-  async write(p: Uint8Array): Promise<number> {
-    this.buf += decoder.decode(p);
-    return p.byteLength;
-  }
-
-  toString(): string {
-    return this.buf
-  }
-}
-
-export async function readString(reader: Reader): Promise<string> {
-  const w = new StringWriter();
-  await copy(w, reader);
-  return w.toString();
-}

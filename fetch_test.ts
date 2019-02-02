@@ -1,9 +1,9 @@
 import {assertEqual, runTests, test} from "https://deno.land/x/testing/mod.ts";
-import {fetch, request} from "./fetch.ts";
+import {fetch} from "./fetch.ts";
 import {copy, open} from "deno";
 import {setFilter} from "https://deno.land/x/testing/testing.ts";
-import {ReadableStreamDenoReader, readString} from "./util.ts";
-
+import {ReadableStreamDenoReader} from "./util.ts";
+import {readString} from "https://denopkg.com/keroxp/deno-request/strings.ts"
 test(async function testGet() {
   const res = await fetch("http://httpbin.org/get?deno=land", {
     method: "GET"
@@ -33,10 +33,4 @@ test(async function testGetAndFile() {
   assertEqual("closed", resp.body.state);
 });
 
-test(async function testRequest() {
-  const {body} = await request("http://httpbin.org/get?deno=land");
-  const str = await readString(body);
-  const json = JSON.parse(str);
-  assertEqual("land", json["args"]["deno"])
-});
 runTests();

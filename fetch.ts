@@ -3,37 +3,13 @@ import {dial, Reader} from "deno";
 import {ReadableStreamDenoReader, unmarshalHeaders} from "./util.ts";
 import {Response} from "./response.ts";
 import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import {HttpRequest, writeHttpRequest} from "./writer.ts";
-import {HttpResponse, readHttpResponse} from "./reader.ts";
+import {HttpRequest, writeHttpRequest} from "https://denopkg.com/keroxp/deno-request/writer.ts";
+import {HttpResponse, readHttpResponse} from "https://denopkg.com/keroxp/deno-request/reader.ts";
 
 const kPortMap = {
   "http:": "80",
   "https:": "443"
 };
-
-function normalizeRequest(params: string | HttpRequest) {
-  let req: HttpRequest;
-  let url: URL;
-  if (typeof params === "string") {
-    url = new URL(params);
-    req = {
-      url: params,
-      method: "GET",
-    }
-  } else {
-    url = new URL(params.url);
-    req = params;
-  }
-  url.port = url.port || kPortMap[url.protocol];
-  return {url, req}
-}
-
-export async function request(params: string | HttpRequest): Promise<HttpResponse> {
-  const {url, req} = normalizeRequest(params);
-  const conn = await dial("tcp", `${url.hostname}:${url.port}`);
-  await writeHttpRequest(conn, req);
-  return readHttpResponse(conn);
-}
 
 export async function fetch(
   input: Request | string,
