@@ -1,5 +1,5 @@
 import { Request, RequestInit } from "./request.ts";
-import { dial, Reader, ReadResult } from "deno";
+import { dial, read, Reader, ReadResult } from "deno";
 import { BufReader, BufWriter } from "https://deno.land/x/io/bufio.ts";
 import { TextProtoReader } from "https://deno.land/x/textproto/mod.ts";
 import { unmarshalHeaders } from "./util.ts";
@@ -40,25 +40,28 @@ async function _fetch(req: Request): Promise<Response> {
     port = kPortMap[protocol];
   }
   const conn = await dial("tcp", `${host}:${port}`);
-  try {
-    const writer = new BufWriter(conn);
-    // start line
-    const lines = [`${req.method} ${pathname}${search} HTTP/1.1`];
-    // header
-    if (!reqHeaders.has("host")) {
-      reqHeaders.set("host", host);
-    }
-    for (const [key, value] of reqHeaders) {
-      lines.push(`${key}: ${value}`);
-    }
+  const writer = new BufWriter(conn);
+  // start line
+  const lines = [`${req.method} ${pathname}${search} HTTP/1.1`];
+  // header
+  if (!reqHeaders.has("host")) {
+    reqHeaders.set("host", host);
+  }
+  if (req.body) {
     if (req.bodySize === null) {
       reqHeaders.set("transfer-encoding", "chunked");
     } else {
       reqHeaders.set("content-length", `${req.bodySize}`);
     }
-    lines.push(CRLF);
-    const headerText = lines.join(CRLF);
-    await writer.write(encoder.encode(headerText));
+  }
+  for (const [key, value] of reqHeaders) {
+    lines.push(`${key}: ${value}`);
+  }
+  lines.push(CRLF);
+  const headerText = lines.join(CRLF);
+  await writer.write(encoder.encode(headerText));
+  await writer.flush();
+  if (req.body) {
     const reqBodyStream = new WritableStream<Uint8Array>({
       write: async (chunk: Uint8Array) => {
         if (req.bodySize === null) {
@@ -69,65 +72,63 @@ async function _fetch(req: Request): Promise<Response> {
         } else {
           await writer.write(chunk);
         }
+        await writer.flush();
       },
       close: async () => {
         if (req.bodySize === null) {
           await writer.write(encoder.encode("0\r\n"));
+          await writer.flush();
         }
       }
     });
     await req.body.pipeTo(reqBodyStream);
-    // Response
-    const reader = new BufReader(conn);
-    const tpReader = new TextProtoReader(reader);
-    // read status line
-    const [resLine, state] = await tpReader.readLine();
-    const [m, _, status, statusText] = resLine.match(
-      /^([^ ]+)? (\d{3}) (.+?)$/
-    );
-    // read header
-    const [resHeaders] = await tpReader.readMIMEHeader();
-    // read body
-    const resContentLength = resHeaders.get("content-length");
-    const contentLength = parseInt(resContentLength);
-    const resBodyBuffer = new Uint8Array(1024);
-    let bodyReader: Reader;
-    if (resHeaders.get("transfer-encoding") !== "chunked") {
-      bodyReader = new BodyReader(conn, contentLength);
-    } else {
-      bodyReader = new ChunkedBodyReader(conn);
-    }
-    return new Response(
-      new ReadableStream<Uint8Array>({
-        pull: async controller => {
-          try {
-            const { nread, eof } = await bodyReader.read(resBodyBuffer);
-            if (nread > 0) {
-              controller.enqueue(resBodyBuffer.slice(0, nread));
-            }
-            if (eof) {
-              controller.close();
-              conn.close();
-            }
-          } catch (e) {
-            controller.error(e);
+  }
+  // Response
+  const reader = new BufReader(conn);
+  const tpReader = new TextProtoReader(reader);
+  // read status line
+  const [resLine, state] = await tpReader.readLine();
+  const [m, _, status, statusText] = resLine.match(/^([^ ]+)? (\d{3}) (.+?)$/);
+  // read header
+  const [resHeaders] = await tpReader.readMIMEHeader();
+  // read body
+  const resContentLength = resHeaders.get("content-length");
+  const contentLength = parseInt(resContentLength);
+  const resBodyBuffer = new Uint8Array(1024);
+  let bodyReader: Reader;
+  if (resHeaders.get("transfer-encoding") !== "chunked") {
+    bodyReader = new BodyReader(reader, contentLength);
+  } else {
+    bodyReader = new ChunkedBodyReader(reader);
+  }
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull: async controller => {
+        try {
+          const { nread, eof } = await bodyReader.read(resBodyBuffer);
+          if (nread > 0) {
+            controller.enqueue(resBodyBuffer.slice(0, nread));
+          }
+          if (eof) {
+            controller.close();
             conn.close();
           }
-        },
-        cancel: async reason => {
+        } catch (e) {
+          controller.error(e);
           conn.close();
         }
-      }),
-      {
-        url: req.url,
-        status: parseInt(status),
-        statusText,
-        headers: resHeaders
+      },
+      cancel: async reason => {
+        conn.close();
       }
-    );
-  } finally {
-    conn.close();
-  }
+    }),
+    {
+      url: req.url,
+      status: parseInt(status),
+      statusText,
+      headers: resHeaders
+    }
+  );
 }
 
 class BodyReader implements Reader {

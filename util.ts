@@ -1,5 +1,6 @@
 import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
 import { ReadableStreamDefaultReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
+import { read, write } from "deno";
 
 // HTTP methods whose capitalization should be normalized
 const methods = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];
@@ -103,7 +104,7 @@ export async function readFullStream(
   const reader = stream.getReader() as ReadableStreamDefaultReader;
   let chunks: Uint8Array[] = [];
   let len = 0;
-  while (!reader.closed) {
+  while (reader.ownerReadableStream.state === "readable") {
     const { value, done } = await reader.read();
     if (value) {
       chunks.push(value);

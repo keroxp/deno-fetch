@@ -38,7 +38,7 @@ export class Response implements BodyMixin {
   readonly url: string;
 
   get body(): ReadableStream | null {
-    return this.bodyDelegate.stream;
+    return this.bodyDelegate ? this.bodyDelegate.stream : null;
   }
 
   get bodyUsed(): boolean {

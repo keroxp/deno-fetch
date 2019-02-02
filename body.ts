@@ -5,7 +5,6 @@ import {
 } from "./util.ts";
 import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
 import { Multipart } from "./multipart.ts";
-import { ReadableStreamDefaultReader } from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
 import { defer } from "https://denopkg.com/keroxp/deno-streams/defer.ts";
 
 const encoder = new TextEncoder();
@@ -75,7 +74,7 @@ export class Body implements BodyMixin {
   async arrayBuffer(): Promise<ArrayBuffer> {
     if (this.bodyArrayBuffer) return this.bodyArrayBuffer;
     const bytes = await this.readFullBody();
-    return bytes.buffer as ArrayBuffer;
+    return (this.bodyArrayBuffer = bytes.buffer as ArrayBuffer);
   }
 
   private bodyBlob: Blob;
@@ -111,8 +110,7 @@ export class Body implements BodyMixin {
   private bodyString: string;
 
   async json(): Promise<any> {
-    this.bodyString = await this.text();
-    return JSON.parse(this.bodyString);
+    return JSON.parse(await this.text());
   }
 
   async text(): Promise<string> {
@@ -130,24 +128,32 @@ export function extractBody(
 } {
   let contentType = null;
   let size = null;
-  let stream = new ReadableStream<Uint8Array>({});
+  let stream: ReadableStream<Uint8Array> = null;
   if (body instanceof ReadableStream) {
-    if (!(body.locked || body.disturbed)) {
-      throw new Error("body stream is locked or disturbed");
+    if (body.locked) {
+      throw new Error(`body stream is locked`);
+    } else if (body.disturbed) {
+      throw new Error(`body stream is disturbed`);
     }
     stream = body;
   } else if (typeof body === "string") {
     contentType = "text/plain;charset=UTF-8";
     const bytes = encoder.encode(body);
-    const controller = stream.readableStreamController;
-    controller.enqueue(bytes);
-    controller.close();
+    stream = new ReadableStream<Uint8Array>({
+      start: controller => {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
     size = bytes.byteLength;
   } else if (body instanceof ArrayBuffer) {
     const view = new Uint8Array(body);
-    const controller = stream.readableStreamController;
-    controller.enqueue(view);
-    controller.close();
+    stream = new ReadableStream<Uint8Array>({
+      start: controller => {
+        controller.enqueue(view);
+        controller.close();
+      }
+    });
     size = view.byteLength;
   } else if (body instanceof Blob) {
     if (body.type && body.type !== "") {
@@ -191,21 +197,27 @@ export function extractBody(
       .catch(startDefer.reject);
     contentType = multipart.formDataContentType();
   } else if (body instanceof URLSearchParams) {
-    let res = "";
-    const controller = stream.readableStreamController;
+    let kv = [];
     for (const [key, val] of body.entries()) {
-      res += `${key}=${val}&`;
+      kv.push(`${key}=${val}`);
     }
-    const bytes = encoder.encode(res);
-    controller.enqueue(bytes);
-    controller.close();
+    const bytes = encoder.encode(kv.join("&"));
+    stream = new ReadableStream<Uint8Array>({
+      start: controller => {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
     contentType = "application/x-www-form-urlencoded";
     size = bytes.byteLength;
   } else if (isArrayBufferView(body)) {
     const bytes = binaryArrayToBytes(body);
-    const controller = stream.readableStreamController;
-    controller.enqueue(bytes);
-    controller.close();
+    stream = new ReadableStream<Uint8Array>({
+      start: controller => {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
     size = bytes.byteLength;
   } else {
     throw new Error("invalid input: " + body);

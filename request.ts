@@ -22,7 +22,12 @@ export interface RequestInit {
 }
 
 export class Request implements BodyMixin {
-  constructor(input: Request | string, options: RequestInit = {}) {
+  constructor(
+    input: Request | string,
+    options: RequestInit = {
+      method: "GET"
+    }
+  ) {
     let bodyInit = options.body;
     if (input instanceof Request) {
       if (input.bodyUsed) {
@@ -60,13 +65,15 @@ export class Request implements BodyMixin {
     if ((this.method === "GET" || this.method === "HEAD") && bodyInit) {
       throw new TypeError("Body not allowed for GET or HEAD requests");
     }
-    const { stream, size, contentType } = extractBody(bodyInit);
-    this.bodyInit = bodyInit;
-    this.bodySize = size;
-    if (contentType) {
-      this.headers.set("Content-Type", contentType);
+    if (bodyInit) {
+      const { stream, size, contentType } = extractBody(bodyInit);
+      this.bodyInit = bodyInit;
+      this.bodySize = size;
+      if (contentType) {
+        this.headers.set("Content-Type", contentType);
+      }
+      this.bodyDelegate = new Body(stream, contentType);
     }
-    this.bodyDelegate = new Body(stream, contentType);
   }
 
   cache: domTypes.RequestCache;
@@ -86,11 +93,11 @@ export class Request implements BodyMixin {
   url: string;
 
   get body(): ReadableStream | null {
-    return this.bodyDelegate.stream;
+    return this.bodyDelegate ? this.bodyDelegate.stream : null;
   }
 
   get bodyUsed(): boolean {
-    return this.bodyDelegate.bodyUsed;
+    return this.bodyDelegate ? this.bodyDelegate.bodyUsed : false;
   }
 
   private readonly bodyDelegate: Body;

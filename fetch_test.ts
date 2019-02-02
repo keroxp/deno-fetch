@@ -1,4 +1,8 @@
-import { test, assertEqual } from "https://deno.land/x/testing/mod.ts";
+import {
+  test,
+  assertEqual,
+  runTests
+} from "https://deno.land/x/testing/mod.ts";
 import { fetch } from "./fetch.ts";
 test(async function testGet() {
   const res = await fetch("http://httpbin.org/get?deno=land", {
@@ -18,5 +22,7 @@ test(async function testPost() {
   });
   console.log(await res.text());
   const js = await res.json();
-  assertEqual(js["data"], "deno=land");
+  assertEqual(js["form"]["deno"], "land");
 });
+
+runTests();
