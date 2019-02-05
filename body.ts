@@ -3,9 +3,9 @@ import {
   isArrayBufferView,
   readFullStream
 } from "./util.ts";
-import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import { Multipart } from "https://denopkg.com/keroxp/deno-request/multipart.ts";
-import { defer } from "https://denopkg.com/keroxp/deno-streams/defer.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
+import { MultipartWriter } from "https://denopkg.com/keroxp/deno-multipart/multipart.ts";
+import { defer } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/defer.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -180,7 +180,7 @@ export function extractBody(
         return p.byteLength;
       }
     };
-    const multipart = new Multipart(writer);
+    const multipart = new MultipartWriter(writer);
     (async function a() {
       for (const [key, val] of body.entries()) {
         if (typeof val === "string") {

@@ -1,6 +1,6 @@
 import { unmarshalHeaders } from "./util.ts";
 import { Body, BodyInit, BodyMixin, extractBody } from "./body.ts";
-import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 export class Response implements BodyMixin {
   constructor(
@@ -37,7 +37,7 @@ export class Response implements BodyMixin {
   readonly type: domTypes.ResponseType;
   readonly url: string;
 
-  get body(): ReadableStream | null {
+  get body(): ReadableStream<Uint8Array> | null {
     return this.bodyDelegate ? this.bodyDelegate.stream : null;
   }
 

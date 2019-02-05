@@ -2,9 +2,9 @@ import {Request, RequestInit} from "./request.ts";
 import {dial, Reader} from "deno";
 import {ReadableStreamDenoReader, unmarshalHeaders} from "./util.ts";
 import {Response} from "./response.ts";
-import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
 import {HttpRequest, writeHttpRequest} from "https://denopkg.com/keroxp/deno-request/writer.ts";
 import {HttpResponse, readHttpResponse} from "https://denopkg.com/keroxp/deno-request/reader.ts";
+import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 const kPortMap = {
   "http:": "80",

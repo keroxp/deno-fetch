@@ -3,7 +3,7 @@
 // MIT License.
 import { Body, BodyInit, BodyMixin, extractBody } from "./body.ts";
 import { normalizeMethod, unmarshalHeaders } from "./util.ts";
-import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 export interface RequestInit {
   body?: BodyInit | null;
@@ -92,7 +92,7 @@ export class Request implements BodyMixin {
   signal: domTypes.AbortSignal;
   url: string;
 
-  get body(): ReadableStream | null {
+  get body(): ReadableStream<Uint8Array> | null {
     return this.bodyDelegate ? this.bodyDelegate.stream : null;
   }
 

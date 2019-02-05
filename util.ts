@@ -1,13 +1,10 @@
-import {
-  ReadableStream,
-  ReadableStreamReadResult
-} from "https://denopkg.com/keroxp/deno-streams/readable_stream.ts";
-import {ReadableStreamReader} from "https://denopkg.com/keroxp/deno-streams/readable_stream_reader.ts";
+import {ReadableStreamReader} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream_reader.ts";
 import {copy, Reader, ReadResult, Writer} from "deno";
 import {
   IsReadableStreamBYOBReader,
   ReadableStreamBYOBReader
-} from "https://denopkg.com/keroxp/deno-streams/readable_stream_byob_reader.ts";
+} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream_byob_reader.ts";
+import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 // HTTP methods whose capitalization should be normalized
 const methods = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];

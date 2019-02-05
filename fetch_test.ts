@@ -1,7 +1,6 @@
-import {assertEqual, runTests, test} from "https://deno.land/x/testing/mod.ts";
+import {assertEqual, runTests, setFilter, test} from "https://deno.land/x/std@v0.2.8/testing/mod.ts";
 import {fetch} from "./fetch.ts";
 import {copy, open} from "deno";
-import {setFilter} from "https://deno.land/x/testing/testing.ts";
 import {ReadableStreamDenoReader} from "./util.ts";
 import {readString} from "https://denopkg.com/keroxp/deno-request/strings.ts"
 test(async function testGet() {
