@@ -1,10 +1,16 @@
-import {Request, RequestInit} from "./request.ts";
-import {dial, Reader} from "deno";
-import {ReadableStreamDenoReader, unmarshalHeaders} from "./util.ts";
-import {Response} from "./response.ts";
-import {HttpRequest, writeHttpRequest} from "https://denopkg.com/keroxp/deno-request/writer.ts";
-import {HttpResponse, readHttpResponse} from "https://denopkg.com/keroxp/deno-request/reader.ts";
-import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
+import { Request, RequestInit } from "./request.ts";
+import { dial, Reader } from "deno";
+import { ReadableStreamDenoReader, unmarshalHeaders } from "./util.ts";
+import { Response } from "./response.ts";
+import {
+  HttpRequest,
+  writeHttpRequest
+} from "https://denopkg.com/keroxp/deno-request/writer.ts";
+import {
+  HttpResponse,
+  readHttpResponse
+} from "https://denopkg.com/keroxp/deno-request/reader.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 const kPortMap = {
   "http:": "80",
@@ -32,7 +38,7 @@ async function _fetch(req: Request): Promise<Response> {
     reqHeaders.set("Connection", "Keep-Alive");
   }
   const url = new URL(req.url);
-  let {hostname, protocol, port} = url;
+  let { hostname, protocol, port } = url;
   if (!port) {
     port = kPortMap[protocol];
   }
@@ -60,7 +66,7 @@ async function _fetch(req: Request): Promise<Response> {
     new ReadableStream<Uint8Array>({
       pull: async controller => {
         try {
-          const {nread, eof} = await bodyReader.read(resBodyBuffer);
+          const { nread, eof } = await bodyReader.read(resBodyBuffer);
           if (nread > 0) {
             controller.enqueue(resBodyBuffer.slice(0, nread));
           }

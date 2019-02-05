@@ -1,10 +1,10 @@
-import {ReadableStreamReader} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream_reader.ts";
-import {copy, Reader, ReadResult, Writer} from "deno";
+import { ReadableStreamReader } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream_reader.ts";
+import { copy, Reader, ReadResult, Writer } from "deno";
 import {
   IsReadableStreamBYOBReader,
   ReadableStreamBYOBReader
 } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream_byob_reader.ts";
-import {ReadableStream} from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
+import { ReadableStream } from "https://denopkg.com/keroxp/deno-streams@v0.1.1/readable_stream.ts";
 
 // HTTP methods whose capitalization should be normalized
 const methods = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];
@@ -109,7 +109,7 @@ export async function readFullStream(
   let chunks: Uint8Array[] = [];
   let len = 0;
   while (true) {
-    const {value, done} = await reader.read();
+    const { value, done } = await reader.read();
     if (value) {
       chunks.push(value);
       len += value.byteLength;
@@ -144,19 +144,18 @@ export class ReadableStreamDenoReader implements Reader {
     if (this.reader) {
       return await this.reader.read();
     } else {
-      const {done} = await this.byobReader.read(p);
-      return {value: p, done};
+      const { done } = await this.byobReader.read(p);
+      return { value: p, done };
     }
   }
 
   async read(p: Uint8Array): Promise<ReadResult> {
-    const {value, done} = await this._read(p);
+    const { value, done } = await this._read(p);
     let nread = 0;
     if (value) {
       p.set(value);
       nread = value.byteLength;
     }
-    return {nread, eof: done};
+    return { nread, eof: done };
   }
 }
-
